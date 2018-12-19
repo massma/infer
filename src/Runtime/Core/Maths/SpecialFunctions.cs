@@ -3816,8 +3816,14 @@ else if (m < 20.0 - 60.0/11.0 * s) {
         /// <returns></returns>
         public static double Average(double a, double b)
         {
+            // This version avoids underflow but may overflow.
             double midpoint = (a + b) / 2;
-            if (double.IsInfinity(midpoint)) midpoint = 0.5 * a + 0.5 * b;
+            if (double.IsInfinity(midpoint))
+            {
+                // This version avoids overflow but may underflow.
+                // Luckily, if we are in this branch, it cannot underflow.
+                midpoint = 0.5 * a + 0.5 * b;
+            }
             return midpoint;
         }
 

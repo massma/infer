@@ -37,6 +37,30 @@ namespace Microsoft.ML.Probabilistic.Tests
         }
 
         [Fact]
+        public void InnerQuantiles_InfinityTest()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                var inner = new InnerQuantiles(new double[] { double.PositiveInfinity });
+            });
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                var est = new QuantileEstimator(0.1);
+                est.Add(double.PositiveInfinity);
+                //est.Add(double.NegativeInfinity);
+                var inner = new InnerQuantiles(10, est);
+            });
+        }
+
+        [Fact]
+        public void QuantileEstimator_InfinityTest()
+        {
+            var est = new QuantileEstimator(0.1);
+            est.Add(double.PositiveInfinity);
+            Assert.Equal(double.PositiveInfinity, est.GetQuantile(0.1));
+        }
+
+        [Fact]
         public void QuantileEstimator_SinglePointIsMedian()
         {
             QuantileEstimator est = new QuantileEstimator(0.1);
@@ -182,7 +206,7 @@ namespace Microsoft.ML.Probabilistic.Tests
             Assert.Equal(outer.GetQuantile(0.3), middle);
             Assert.Equal(outer.GetQuantile(0.5), middle);
             Assert.Equal(outer.GetQuantile(0.7), middle);
-            CheckGetQuantile(inner, inner, (int)Math.Ceiling(100.0/8), (int)Math.Floor(100.0*7/8));
+            CheckGetQuantile(inner, inner, (int)Math.Ceiling(100.0 / 8), (int)Math.Floor(100.0 * 7 / 8));
             var est = new QuantileEstimator(0.01);
             est.AddRange(x);
             Assert.Equal(est.GetQuantile(0.3), middle);
@@ -212,7 +236,7 @@ namespace Microsoft.ML.Probabilistic.Tests
             Assert.Equal(next, outer.GetQuantile(1.0));
             CheckGetQuantile(outer, outer);
             var inner = new InnerQuantiles(5, outer);
-            CheckGetQuantile(inner, inner, (int)Math.Ceiling(100.0/6), (int)Math.Floor(100.0*5/6));
+            CheckGetQuantile(inner, inner, (int)Math.Ceiling(100.0 / 6), (int)Math.Floor(100.0 * 5 / 6));
             var est = new QuantileEstimator(0.01);
             est.Add(first, 2);
             est.Add(second, 2);
@@ -249,7 +273,7 @@ namespace Microsoft.ML.Probabilistic.Tests
             Assert.Equal(data[2], outer.GetQuantile(0.3));
             CheckGetQuantile(outer, outer);
             var inner = new InnerQuantiles(7, outer);
-            CheckGetQuantile(inner, inner, (int)Math.Ceiling(100.0/8), (int)Math.Floor(100.0*7/8));
+            CheckGetQuantile(inner, inner, (int)Math.Ceiling(100.0 / 8), (int)Math.Floor(100.0 * 7 / 8));
         }
 
         internal void CheckGetQuantile(CanGetQuantile canGetQuantile, CanGetProbLessThan canGetProbLessThan, int minPercent = 0, int maxPercent = 100)
@@ -296,7 +320,7 @@ namespace Microsoft.ML.Probabilistic.Tests
         [Fact]
         public void QuantileEstimatorTest()
         {
-            foreach(double maximumError in new[] { 0.05, 0.01, 0.005, 0.001 })
+            foreach (double maximumError in new[] { 0.05, 0.01, 0.005, 0.001 })
             {
                 int n = (int)(2.0 / maximumError);
                 QuantileEstimatorTester(maximumError, n);

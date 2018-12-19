@@ -48,6 +48,8 @@ namespace Microsoft.ML.Probabilistic.Distributions
             {
                 this.quantiles[i] = canGetQuantile.GetQuantile((i + 1.0) / (quantileCount + 1.0));
             }
+            OuterQuantiles.AssertFinite(quantiles, nameof(canGetQuantile));
+            OuterQuantiles.AssertNondecreasing(quantiles, nameof(canGetQuantile));
             lowerGaussian = GetLowerGaussian(quantiles);
             upperGaussian = GetUpperGaussian(quantiles);
         }
