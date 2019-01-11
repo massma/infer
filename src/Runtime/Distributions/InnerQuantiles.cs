@@ -74,6 +74,7 @@ namespace Microsoft.ML.Probabilistic.Distributions
             return quantiles;
         }
 
+        /// <inheritdoc/>
         public double GetProbLessThan(double x)
         {
             if (x < quantiles[0])

@@ -83,7 +83,10 @@ namespace TestApp
 
             //new GaussianOpTests().GaussianOpX();
             //new OperatorTests().GaussianIsBetweenTest2();
-            new OperatorTests().GaussianIsBetweenCRRR_IsMonotonicInX();
+            //new OperatorTests().GaussianIsBetween_PointLowerBound();
+            //new OperatorTests().GaussianIsBetween_PointUpperBound();
+            //new OperatorTests().GaussianIsBetweenCRRR_IsMonotonicInX();
+            new OperatorTests().GaussianIsBetweenCRRR_IsMonotonicInX2();
 
             if (false)
             {

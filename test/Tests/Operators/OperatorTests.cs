@@ -1974,18 +1974,18 @@ zL = (L - mx)*sqrt(prec)
                 if (trial == 0)
                     upperBound = Gaussian.PointMass(1);
                 else
-                    upperBound = new Gaussian(1, 1);
-                Console.WriteLine("upperBound = {0}", upperBound);
+                    upperBound = new Gaussian(1, 1e-8);
+                Console.WriteLine($"upperBound = {upperBound}");
                 Gaussian lowerBound = Gaussian.PointMass(-1);
                 Gaussian result2 = DoubleIsBetweenOp.LowerBoundAverageConditional_Slow(isBetween, x, lowerBound, upperBound);
-                Console.WriteLine("{0}: {1}", lowerBound, result2);
-                for (int i = 8; i < 30; i++)
+                Console.WriteLine($"{lowerBound}: {result2}");
+                for (int i = 6; i < 30; i++)
                 {
                     double v = System.Math.Pow(0.1, i);
                     lowerBound = Gaussian.FromMeanAndVariance(-1, v);
                     Gaussian result = DoubleIsBetweenOp.LowerBoundAverageConditional_Slow(isBetween, x, lowerBound, upperBound);
                     double error = result.MaxDiff(result2);
-                    Console.WriteLine("{0}: {1} {2}", lowerBound, result, error);
+                    Console.WriteLine($"{lowerBound}: {result} {error}");
                     Assert.True(error < 1e-6);
                 }
             }
@@ -2000,20 +2000,21 @@ zL = (L - mx)*sqrt(prec)
             Gaussian lowerBound;
             for (int trial = 0; trial < 2; trial++)
             {
-                if (trial == 1)
+                if (trial == 0)
                     lowerBound = Gaussian.PointMass(-1);
                 else
-                    lowerBound = new Gaussian(-1, 1);
+                    lowerBound = new Gaussian(-1, 1e-8);
+                Console.WriteLine($"lowerBound = {lowerBound}");
                 Gaussian upperBound = Gaussian.PointMass(1);
                 Gaussian result2 = DoubleIsBetweenOp.UpperBoundAverageConditional_Slow(isBetween, x, lowerBound, upperBound);
-                Console.WriteLine("{0}: {1}", upperBound, result2);
-                for (int i = 8; i < 30; i++)
+                Console.WriteLine($"{upperBound}: {result2}");
+                for (int i = 6; i < 300; i++)
                 {
                     double v = System.Math.Pow(0.1, i);
                     upperBound = Gaussian.FromMeanAndVariance(1, v);
                     Gaussian result = DoubleIsBetweenOp.UpperBoundAverageConditional_Slow(isBetween, x, lowerBound, upperBound);
                     double error = result.MaxDiff(result2);
-                    Console.WriteLine("{0}: {1} {2}", lowerBound, result, error);
+                    Console.WriteLine($"{upperBound}: {result} {error}");
                     Assert.True(error < 1e-6);
                 }
             }
@@ -2765,24 +2766,128 @@ weight * (tau + alphaX) + alphaX
             Gaussian lowerBound = Gaussian.FromNatural(-200, 100);
             Gaussian upperBound = Gaussian.FromNatural(255, 147);
             Bernoulli isBetween = Bernoulli.PointMass(true);
-            for (int i = 0; i < 100; i++)
+            double xMeanMaxUlpError = 0;
+            double xPrecisionMaxUlpError = 0;
+            double uMeanMaxUlpError = 0;
+            double uPrecisionMaxUlpError = 0;
+            for (int i = 30; i < 3000; i++)
             {
                 Gaussian X = Gaussian.FromNatural(1.2, System.Math.Pow(10, -i*0.1));
                 var toX = DoubleIsBetweenOp.XAverageConditional_Slow(isBetween, X, lowerBound, upperBound);
                 var toLowerBound = DoubleIsBetweenOp.LowerBoundAverageConditional_Slow(isBetween, X, lowerBound, upperBound);
                 var toUpperBound = DoubleIsBetweenOp.UpperBoundAverageConditional_Slow(isBetween, X, lowerBound, upperBound);
                 Trace.WriteLine($"{X}: {toX} {toLowerBound} {toUpperBound}");
-                if (i > 0)
+                if (!previousToX.IsUniform())
                 {
+                    if(previousToX.GetMean() > toX.GetMean())
+                    {
+                        xMeanMaxUlpError = System.Math.Max(xMeanMaxUlpError, UlpDiff(previousToX.GetMean(), toX.GetMean()));
+                    }
+                    if(previousToX.Precision > toX.Precision)
+                    {
+                        xPrecisionMaxUlpError = System.Math.Max(xPrecisionMaxUlpError, UlpDiff(previousToX.Precision, toX.Precision));
+                        //Assert.True(xPrecisionMaxUlpError <= 0);
+                    }
                     Assert.True(previousToLowerBound.GetMean() >= toLowerBound.GetMean());
                     //Assert.True(previousToLowerBound.GetVariance() <= toLowerBound.GetVariance());
-                    Assert.True(previousToUpperBound.GetMean() <= toUpperBound.GetMean());
-                    Assert.True(previousToUpperBound.GetVariance() <= toUpperBound.GetVariance());
+                    if(previousToUpperBound.GetMean() > toUpperBound.GetMean())
+                    {
+                        uMeanMaxUlpError = System.Math.Max(uMeanMaxUlpError, UlpDiff(previousToUpperBound.GetMean(), toUpperBound.GetMean()));
+                    }
+                    if(previousToUpperBound.Precision < toUpperBound.Precision)
+                    {
+                        uPrecisionMaxUlpError = System.Math.Max(uPrecisionMaxUlpError, UlpDiff(previousToUpperBound.Precision, toUpperBound.Precision));
+                    }
                 }
                 previousToX = toX;
                 previousToLowerBound = toLowerBound;
                 previousToUpperBound = toUpperBound;
             }
+            Trace.WriteLine($"xMeanMaxUlpError = {xMeanMaxUlpError}, xPrecisionMaxUlpError = {xPrecisionMaxUlpError}, uMeanMaxUlpError = {uMeanMaxUlpError}, uPrecisionMaxUlpError = {uPrecisionMaxUlpError}");
+            Assert.True(uPrecisionMaxUlpError < 1e11);
+            Assert.True(uMeanMaxUlpError < 1e11);
+            Assert.True(xMeanMaxUlpError < 1e11);
+            Assert.True(xPrecisionMaxUlpError < 1e11);
+        }
+
+        [Fact]
+        public void GaussianIsBetweenCRRR_IsMonotonicInX2()
+        {
+            Gaussian previousToX = new Gaussian();
+            Gaussian previousToLowerBound = new Gaussian();
+            Gaussian previousToUpperBound = new Gaussian();
+            Gaussian upperBound = Gaussian.FromNatural(200, 100);
+            Gaussian lowerBound = Gaussian.FromNatural(-255, 147);
+            Bernoulli isBetween = Bernoulli.PointMass(true);
+            double xMeanMaxUlpError = 0;
+            double xPrecisionMaxUlpError = 0;
+            double lMeanMaxUlpError = 0;
+            double lPrecisionMaxUlpError = 0;
+            double uMeanMaxUlpError = 0;
+            for (int i = 50; i < 3000; i++)
+            {
+                Gaussian X = Gaussian.FromNatural(-1.2, System.Math.Pow(10, -i * 0.1));
+                Gaussian toXExpected = new Gaussian(-0.3047, 0.5397);
+                SolveAlphaBeta(X, toXExpected, out double alpha, out double beta);
+                Trace.WriteLine($"expected alpha = {alpha}, beta = {beta}");
+                var toX = DoubleIsBetweenOp.XAverageConditional_Slow(isBetween, X, lowerBound, upperBound);
+                var toLowerBound = DoubleIsBetweenOp.LowerBoundAverageConditional_Slow(isBetween, X, lowerBound, upperBound);
+                var toUpperBound = DoubleIsBetweenOp.UpperBoundAverageConditional_Slow(isBetween, X, lowerBound, upperBound);
+                Trace.WriteLine($"{X}: {toX} {toLowerBound} {toUpperBound}");
+                if (!previousToX.IsUniform())
+                {
+                    if (previousToX.GetMean() < toX.GetMean())
+                    {
+                        xMeanMaxUlpError = System.Math.Max(xMeanMaxUlpError, UlpDiff(previousToX.GetMean(), toX.GetMean()));
+                    }
+                    if (previousToX.Precision > toX.Precision)
+                    {
+                        xPrecisionMaxUlpError = System.Math.Max(xPrecisionMaxUlpError, UlpDiff(previousToX.Precision, toX.Precision));
+                        //Assert.True(xPrecisionMaxUlpError <= 0);
+                    }
+                    if(previousToLowerBound.GetMean() < toLowerBound.GetMean())
+                    {
+                        lMeanMaxUlpError = System.Math.Max(lMeanMaxUlpError, UlpDiff(previousToLowerBound.GetMean(), toLowerBound.GetMean()));
+                    }
+                    if(previousToLowerBound.Precision < toLowerBound.Precision)
+                    {
+                        lPrecisionMaxUlpError = System.Math.Max(lPrecisionMaxUlpError, UlpDiff(previousToLowerBound.Precision, toLowerBound.Precision));
+                    }
+                    if(previousToUpperBound.GetMean() > toUpperBound.GetMean())
+                    {
+                        uMeanMaxUlpError = System.Math.Max(uMeanMaxUlpError, UlpDiff(previousToUpperBound.GetMean(), toUpperBound.GetMean()));
+                    }
+                    //Assert.True(previousToUpperBound.GetVariance() <= toUpperBound.GetVariance());
+                }
+                previousToX = toX;
+                previousToLowerBound = toLowerBound;
+                previousToUpperBound = toUpperBound;
+            }
+            Trace.WriteLine($"xMeanMaxUlpError = {xMeanMaxUlpError}, xPrecisionMaxUlpError = {xPrecisionMaxUlpError}, lMeanMaxUlpError = {lMeanMaxUlpError}, lPrecisionMaxUlpError = {lPrecisionMaxUlpError}");
+            Assert.True(xMeanMaxUlpError < 1e11);
+            Assert.True(xPrecisionMaxUlpError < 1e11);
+            Assert.True(lMeanMaxUlpError < 1e11);
+            Assert.True(lPrecisionMaxUlpError < 1e11);
+        }
+
+        private static void SolveAlphaBeta(Gaussian prior, Gaussian msg, out double alpha, out double beta)
+        {
+            if (prior.IsPointMass)
+            {
+                beta = msg.Precision;
+                alpha = msg.MeanTimesPrecision - prior.Point * beta;
+                return;
+            }
+            if(msg.IsPointMass)
+            {
+                beta = prior.Precision;
+                alpha = (msg.Point - prior.GetMean()) * beta;
+                return;
+            }
+            beta = 1 / (1 / msg.Precision + 1 / prior.Precision);
+            double weight = beta / (prior.Precision - beta);
+            // weight*tau + (weight + 1)*alpha = msg.MeanTimesPrecision
+            alpha = (msg.MeanTimesPrecision - weight * prior.MeanTimesPrecision) / (1 + weight);
         }
 
         [Fact]
