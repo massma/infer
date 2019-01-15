@@ -2770,7 +2770,8 @@ weight * (tau + alphaX) + alphaX
             double xPrecisionMaxUlpError = 0;
             double uMeanMaxUlpError = 0;
             double uPrecisionMaxUlpError = 0;
-            for (int i = 30; i < 3000; i++)
+            double lMeanMaxUlpError = 0;
+            for (int i = 10; i < 3000; i++)
             {
                 Gaussian X = Gaussian.FromNatural(1.2, System.Math.Pow(10, -i*0.1));
                 var toX = DoubleIsBetweenOp.XAverageConditional_Slow(isBetween, X, lowerBound, upperBound);
@@ -2782,13 +2783,17 @@ weight * (tau + alphaX) + alphaX
                     if(previousToX.GetMean() > toX.GetMean())
                     {
                         xMeanMaxUlpError = System.Math.Max(xMeanMaxUlpError, UlpDiff(previousToX.GetMean(), toX.GetMean()));
+                        Assert.True(xMeanMaxUlpError < 1);
                     }
-                    if(previousToX.Precision > toX.Precision)
+                    if (previousToX.Precision > toX.Precision)
                     {
                         xPrecisionMaxUlpError = System.Math.Max(xPrecisionMaxUlpError, UlpDiff(previousToX.Precision, toX.Precision));
                         //Assert.True(xPrecisionMaxUlpError <= 0);
                     }
-                    Assert.True(previousToLowerBound.GetMean() >= toLowerBound.GetMean());
+                    if(previousToLowerBound.GetMean() < toLowerBound.GetMean())
+                    {
+                        lMeanMaxUlpError = System.Math.Max(lMeanMaxUlpError, UlpDiff(previousToLowerBound.GetMean(), toLowerBound.GetMean()));
+                    }
                     //Assert.True(previousToLowerBound.GetVariance() <= toLowerBound.GetVariance());
                     if(previousToUpperBound.GetMean() > toUpperBound.GetMean())
                     {
@@ -2803,11 +2808,12 @@ weight * (tau + alphaX) + alphaX
                 previousToLowerBound = toLowerBound;
                 previousToUpperBound = toUpperBound;
             }
-            Trace.WriteLine($"xMeanMaxUlpError = {xMeanMaxUlpError}, xPrecisionMaxUlpError = {xPrecisionMaxUlpError}, uMeanMaxUlpError = {uMeanMaxUlpError}, uPrecisionMaxUlpError = {uPrecisionMaxUlpError}");
-            Assert.True(uPrecisionMaxUlpError < 1e11);
-            Assert.True(uMeanMaxUlpError < 1e11);
-            Assert.True(xMeanMaxUlpError < 1e11);
-            Assert.True(xPrecisionMaxUlpError < 1e11);
+            Trace.WriteLine($"xMeanMaxUlpError = {xMeanMaxUlpError}, xPrecisionMaxUlpError = {xPrecisionMaxUlpError}, uMeanMaxUlpError = {uMeanMaxUlpError}, uPrecisionMaxUlpError = {uPrecisionMaxUlpError}, lMeanMaxUlpError = {lMeanMaxUlpError}");
+            Assert.True(xMeanMaxUlpError < 1);
+            Assert.True(xPrecisionMaxUlpError < 1);
+            Assert.True(uPrecisionMaxUlpError < 1e3);
+            Assert.True(uMeanMaxUlpError < 1e3);
+            Assert.True(lMeanMaxUlpError < 1e1);
         }
 
         [Fact]
@@ -2824,12 +2830,12 @@ weight * (tau + alphaX) + alphaX
             double lMeanMaxUlpError = 0;
             double lPrecisionMaxUlpError = 0;
             double uMeanMaxUlpError = 0;
-            for (int i = 50; i < 3000; i++)
+            for (int i = 10; i < 3000; i++)
             {
                 Gaussian X = Gaussian.FromNatural(-1.2, System.Math.Pow(10, -i * 0.1));
-                Gaussian toXExpected = new Gaussian(-0.3047, 0.5397);
-                SolveAlphaBeta(X, toXExpected, out double alpha, out double beta);
-                Trace.WriteLine($"expected alpha = {alpha}, beta = {beta}");
+                //Gaussian toXExpected = new Gaussian(-0.3047, 0.5397);
+                //SolveAlphaBeta(X, toXExpected, out double alpha, out double beta);
+                //Trace.WriteLine($"expected alpha = {alpha}, beta = {beta}");
                 var toX = DoubleIsBetweenOp.XAverageConditional_Slow(isBetween, X, lowerBound, upperBound);
                 var toLowerBound = DoubleIsBetweenOp.LowerBoundAverageConditional_Slow(isBetween, X, lowerBound, upperBound);
                 var toUpperBound = DoubleIsBetweenOp.UpperBoundAverageConditional_Slow(isBetween, X, lowerBound, upperBound);
@@ -2839,6 +2845,7 @@ weight * (tau + alphaX) + alphaX
                     if (previousToX.GetMean() < toX.GetMean())
                     {
                         xMeanMaxUlpError = System.Math.Max(xMeanMaxUlpError, UlpDiff(previousToX.GetMean(), toX.GetMean()));
+                        //Assert.True(xMeanMaxUlpError < 1e11);
                     }
                     if (previousToX.Precision > toX.Precision)
                     {
@@ -2863,11 +2870,12 @@ weight * (tau + alphaX) + alphaX
                 previousToLowerBound = toLowerBound;
                 previousToUpperBound = toUpperBound;
             }
-            Trace.WriteLine($"xMeanMaxUlpError = {xMeanMaxUlpError}, xPrecisionMaxUlpError = {xPrecisionMaxUlpError}, lMeanMaxUlpError = {lMeanMaxUlpError}, lPrecisionMaxUlpError = {lPrecisionMaxUlpError}");
-            Assert.True(xMeanMaxUlpError < 1e11);
-            Assert.True(xPrecisionMaxUlpError < 1e11);
-            Assert.True(lMeanMaxUlpError < 1e11);
-            Assert.True(lPrecisionMaxUlpError < 1e11);
+            Trace.WriteLine($"xMeanMaxUlpError = {xMeanMaxUlpError}, xPrecisionMaxUlpError = {xPrecisionMaxUlpError}, lMeanMaxUlpError = {lMeanMaxUlpError}, lPrecisionMaxUlpError = {lPrecisionMaxUlpError}, uMeanMaxUlpError={uMeanMaxUlpError}");
+            Assert.True(xMeanMaxUlpError < 1);
+            Assert.True(xPrecisionMaxUlpError < 1);
+            Assert.True(lMeanMaxUlpError < 1e3);
+            Assert.True(lPrecisionMaxUlpError < 1e3);
+            Assert.True(uMeanMaxUlpError < 1e1);
         }
 
         private static void SolveAlphaBeta(Gaussian prior, Gaussian msg, out double alpha, out double beta)
@@ -2888,6 +2896,28 @@ weight * (tau + alphaX) + alphaX
             double weight = beta / (prior.Precision - beta);
             // weight*tau + (weight + 1)*alpha = msg.MeanTimesPrecision
             alpha = (msg.MeanTimesPrecision - weight * prior.MeanTimesPrecision) / (1 + weight);
+        }
+
+        [Fact]
+        public void GaussianIsBetweenCRRR_NegativeUpperBoundTest()
+        {
+            Gaussian X = Gaussian.FromNatural(813.982758311301, 1.0594806725507477);
+            Gaussian previousToX = new Gaussian();
+            for (int i = 1; i < 100; i++)
+            {
+                // seems like answer should always be Gaussian(m/v=-814, 1/v=0)
+                Gaussian upperBound = Gaussian.FromNatural(-System.Math.Pow(10, i), 9);
+                Gaussian toX = DoubleIsBetweenOp.XAverageConditional_Slow(Bernoulli.PointMass(true), X, Gaussian.PointMass(0), upperBound);
+                Gaussian Xpost = X * toX;
+                Trace.WriteLine($"{upperBound}: {toX} {toX.MeanTimesPrecision} {Xpost}");
+                // lowerBound is point mass, so cannot be violated.
+                Assert.True(Xpost.GetMean() >= 0);
+                if(!previousToX.IsUniform())
+                {
+                    // upperBound is decreasing, so posterior mean should be decreasing.
+                    Assert.True(toX.GetMean() <= previousToX.GetMean());
+                }
+            }
         }
 
         [Fact]
@@ -3010,7 +3040,7 @@ weight * (tau + alphaX) + alphaX
                 double m, v;
                 Gaussian x2 = new Gaussian(-lowerBounds[i], 1);
                 Xpost.SetToProduct(x2, IsPositiveOp.XAverageConditional(true, x2));
-                Console.WriteLine(Xpost);
+                //Console.WriteLine(Xpost);
                 Xpost.GetMeanAndVariance(out m, out v);
                 Xpost.SetToProduct(x, DoubleIsBetweenOp.XAverageConditional(true, x, lowerBounds[i], Double.PositiveInfinity));
                 Assert.True(Xpost.MaxDiff(new Gaussian(m + lowerBounds[i], v)) < 1e-5 / v);

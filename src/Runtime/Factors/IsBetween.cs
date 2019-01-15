@@ -20,7 +20,7 @@ namespace Microsoft.ML.Probabilistic.Factors
         /// Static flag to force a proper distribution
         /// </summary>
         public static bool ForceProper = true;
-        public static double LowPrecisionThreshold = 3e-8;
+        public static double LowPrecisionThreshold = 1e-8;
         public static double LargeMeanThreshold = 2.5e3;
 
         //-- TruncatedGaussian bounds ------------------------------------------------------------------------------
@@ -820,7 +820,7 @@ namespace Microsoft.ML.Probabilistic.Factors
             Gaussian result = new Gaussian();
             if (isBetween.IsUniform())
                 return result;
-            if (X.IsUniform())
+            if (X.Precision == 0)
             {
                 if (upperBound.IsUniform() || lowerBound.IsUniform())
                 {
@@ -920,18 +920,20 @@ namespace Microsoft.ML.Probabilistic.Factors
                 bool precisionWasZero = AdjustXPrecision(isBetween, ref X, lowerBound, upperBound, ref logZ, 1e-100);
                 double yl, yu, r, invSqrtVxl, invSqrtVxu;
                 GetDiffMeanAndVariance(X, lowerBound, upperBound, out yl, out yu, out r, out invSqrtVxl, out invSqrtVxu);
+                double logZRatio = ((r > smallR) && (logZ < smallLogZ)) ? MMath.NormalCdfRatioLn(yl, yu, r) : 0;
                 // if we get here, we know that -1 < r <= 0 and invSqrtVxl is finite
                 // since lowerBound is not uniform and X is not uniform, invSqrtVxl > 0
-                // yl is always finite.  yu may be +/-infinity, in which case r = 0.
-                double alphaL, alphaU;
-                GetAlpha(X, lowerBound, upperBound, logZ, d_p, yl, yu, r, invSqrtVxl, invSqrtVxu, out alphaL, out alphaU);
+                // yl is always finite.  yu may be +/-infinity.
+                double alphaL;
+                GetAlpha(X, lowerBound, upperBound, logZ, logZRatio, d_p, yl, yu, r, invSqrtVxl, invSqrtVxu, true, out alphaL, false, out double alphaU, out double ignore, out double yuInvSqrtVxuMinusAlphaX);
                 // (mx - ml) / (vl + vx) = yl*invSqrtVxl
                 double betaL = alphaL * (alphaL - yl * invSqrtVxl);
                 if (r > -1 && r != 0 && !precisionWasZero)
                 {
-                    double logPhiR = GetLogPhiR(X, lowerBound, upperBound, yl, yu, r);
-                    double c = d_p * r * Math.Exp(logPhiR - logZ);
+                    double logPhiR = GetLogPhiR(X, lowerBound, upperBound, yl, yu, r, logZ, logZRatio);
+                    double c = d_p * r * Math.Exp(logPhiR);
                     betaL += c * invSqrtVxl * invSqrtVxl;
+                    if (double.IsNaN(betaL)) throw new Exception("betaL is NaN");
                 }
                 return GaussianOp.GaussianFromAlphaBeta(lowerBound, alphaL, betaL, ForceProper);
             }
@@ -956,7 +958,7 @@ namespace Microsoft.ML.Probabilistic.Factors
             Gaussian result = new Gaussian();
             if (isBetween.IsUniform())
                 return result;
-            if (X.IsUniform())
+            if (X.Precision == 0)
             {
                 if (lowerBound.IsUniform() || upperBound.IsUniform())
                 {
@@ -1055,11 +1057,12 @@ namespace Microsoft.ML.Probabilistic.Factors
                 bool precisionWasZero = AdjustXPrecision(isBetween, ref X, lowerBound, upperBound, ref logZ, 1e-100);
                 double yl, yu, r, invSqrtVxl, invSqrtVxu;
                 GetDiffMeanAndVariance(X, lowerBound, upperBound, out yl, out yu, out r, out invSqrtVxl, out invSqrtVxu);
+                double logZRatio = ((r > smallR) && (logZ < smallLogZ)) ? MMath.NormalCdfRatioLn(yl, yu, r) : 0;
                 // if we get here, -1 < r <= 0 and invSqrtVxu is finite
                 // since upperBound is not uniform and X is not uniform, invSqrtVxu > 0
                 // yu is always finite.  yl may be infinity, in which case r = 0.
-                double alphaU, alphaL;
-                GetAlpha(X, lowerBound, upperBound, logZ, d_p, yl, yu, r, invSqrtVxl, invSqrtVxu, out alphaL, out alphaU);
+                double alphaU;
+                GetAlpha(X, lowerBound, upperBound, logZ, logZRatio, d_p, yl, yu, r, invSqrtVxl, invSqrtVxu, false, out double alphaL, true, out alphaU, out double ignore, out double yuInvSqrtVxuMinusAlphaX);
                 // (mu - mx) / (vx + vu) = yu*invSqrtVxu
                 double betaU = alphaU * (alphaU + yu * invSqrtVxu);
                 // This formula is slightly more accurate when r == -1 && yl > 0 && yu < 0:
@@ -1067,8 +1070,8 @@ namespace Microsoft.ML.Probabilistic.Factors
                 // becuase yu * ZoverPhiU + 1 = ncru*yu+1 - yu*ncrl / delta
                 if (r > -1 && r != 0 && !precisionWasZero)
                 {
-                    double logPhiR = GetLogPhiR(X, lowerBound, upperBound, yl, yu, r);
-                    double c = d_p * r * Math.Exp(logPhiR - logZ);
+                    double logPhiR = GetLogPhiR(X, lowerBound, upperBound, yl, yu, r, logZ, logZRatio);
+                    double c = d_p * r * Math.Exp(logPhiR);
                     betaU += c * invSqrtVxu * invSqrtVxu;
                 }
                 return GaussianOp.GaussianFromAlphaBeta(upperBound, alphaU, betaU, ForceProper);
@@ -1105,7 +1108,7 @@ namespace Microsoft.ML.Probabilistic.Factors
             {
                 return upperBound;
             }
-            else if (X.IsUniform())
+            else if (X.Precision == 0)
             {
                 if (lowerBound.IsUniform() || upperBound.IsUniform() ||
                     (lowerBound.IsPointMass && Double.IsInfinity(lowerBound.Point)) ||
@@ -1136,48 +1139,61 @@ namespace Microsoft.ML.Probabilistic.Factors
             else
             {
                 // X is not uniform
-                bool precisionWasZero = AdjustXPrecision(isBetween, ref X, lowerBound, upperBound, ref logZ, 1e-100);
+                bool precisionWasZero = AdjustXPrecision(isBetween, ref X, lowerBound, upperBound, ref logZ);
                 if (Double.IsNegativeInfinity(logZ))
                     throw new AllZeroException();
                 double d_p = 2 * isBetween.GetProbTrue() - 1;
                 double yl, yu, r, invSqrtVxl, invSqrtVxu;
                 GetDiffMeanAndVariance(X, lowerBound, upperBound, out yl, out yu, out r, out invSqrtVxl, out invSqrtVxu);
+                double logZRatio = ((r > smallR) && (logZ < smallLogZ)) ? MMath.NormalCdfRatioLn(yl, yu, r) : 0;
                 double alphaL, alphaU;
-                GetAlpha(X, lowerBound, upperBound, logZ, d_p, yl, yu, r, invSqrtVxl, invSqrtVxu, out alphaL, out alphaU);
+                GetAlpha(X, lowerBound, upperBound, logZ, logZRatio, d_p, yl, yu, r, invSqrtVxl, invSqrtVxu, true, out alphaL, true, out alphaU, out double ylInvSqrtVxlPlusAlphaX, out double yuInvSqrtVxuMinusAlphaX);
                 double alphaX = -alphaL - alphaU;
                 // (mx - ml) / (vl + vx) = yl*invSqrtVxl
                 // To improve accuracy here, could rewrite betaX to be relative to X.Precision, or solve for posterior on X directly as in uniform case.
                 // betaX = alphaX * alphaX - alphaL * (yl * invSqrtVxl) + alphaU * (yu * invSqrtVxu)
-                // This formula gives essentially the same results.
-                double betaX2 = -alphaL * (yl * invSqrtVxl + alphaX) + alphaU * (yu * invSqrtVxu - alphaX);
-                double betaX = alphaX * alphaX;
+                //       = (-alphaL - alphaU)*alphaX - alphaL * (yl * invSqrtVxl) + alphaU * (yu * invSqrtVxu)
+                //       = - alphaL * (yl * invSqrtVxl + alphaX) + alphaU * (yu * invSqrtVxu - alphaX)
+                double betaX = 0;
                 if (!Double.IsInfinity(yl))
                 {
-                    betaX -= alphaL * (yl * invSqrtVxl);
+                    // if yl is infinity then alphaL == 0
+                    betaX -= alphaL * ylInvSqrtVxlPlusAlphaX;
                 }
                 if (!Double.IsInfinity(yu))
                 {
-                    betaX += alphaU * (yu * invSqrtVxu);
+                    // if yu is infinity then alphaU == 0
+                    betaX += alphaU * yuInvSqrtVxuMinusAlphaX;
                 }
                 if (r > -1 && r != 0 && !Double.IsInfinity(yl) && !Double.IsInfinity(yu) && !precisionWasZero)
                 {
-                    double logPhiR = GetLogPhiR(X, lowerBound, upperBound, yl, yu, r);
-                    double c = d_p * r * Math.Exp(logPhiR - logZ);
+                    double logPhiR = GetLogPhiR(X, lowerBound, upperBound, yl, yu, r, logZ, logZRatio);
+                    double c = d_p * r * Math.Exp(logPhiR);
                     betaX += c * (-2 * X.Precision + invSqrtVxl * invSqrtVxl + invSqrtVxu * invSqrtVxu);
                 }
-                Trace.WriteLine($"alphaX={alphaX}, alphaL={alphaL}, alphaU={alphaU}, betaX={betaX}, betaX2={betaX2} X.Precision={X.Precision}");
+                //Trace.WriteLine($"alphaX={alphaX}, alphaL={alphaL}, alphaU={alphaU}, betaX={betaX}, X.Precision={X.Precision}");
                 return GaussianOp.GaussianFromAlphaBeta(X, alphaX, betaX, ForceProper);
             }
             return result;
         }
 
+        private const double smallR = -0.99;
+        private const double smallLogZ = -1e4;
+
         // Invariant to swapping yu and yl
-        private static double GetLogPhiR(Gaussian X, Gaussian lowerBound, Gaussian upperBound, double yl, double yu, double r)
+        private static double GetLogPhiR(Gaussian X, Gaussian lowerBound, Gaussian upperBound, double yl, double yu, double r, double logZ, double logZRatio)
         {
-            double logPhiR = -2 * MMath.LnSqrt2PI - 0.5 * Math.Log(1 - r * r);
-            if (r > -0.99)
+            bool useLogZRatio = (r > smallR) && (logZ < smallLogZ);
+            double omr2 = 1 - r * r;
+            double logPhiR = -0.5 * Math.Log(omr2);
+            if (useLogZRatio) return logPhiR - logZRatio;
+            logPhiR += -2 * MMath.LnSqrt2PI;
+            if (r > smallR)
             {
-                logPhiR -= 0.5 * (yu * yu + yl * (yl - 2 * r * yu)) / (1 - r * r);
+                if (Math.Abs(yu) > Math.Abs(yl))
+                    logPhiR -= 0.5 * (yl * yl + yu * (yu - 2 * r * yl)) / omr2;
+                else
+                    logPhiR -= 0.5 * (yu * yu + yl * (yl - 2 * r * yu)) / omr2;
             }
             else
             {
@@ -1203,7 +1219,8 @@ namespace Microsoft.ML.Probabilistic.Factors
                 double dmxl = mx - ml;
                 logPhiR -= 0.5 * (dmul * dmul * vx + dmux * dmux * vl + dmxl * dmxl * vu) / (vx * vl + vx * vu + vl * vu);
             }
-            return logPhiR;
+            if (double.IsNaN(logPhiR)) throw new Exception($"logPhiR is NaN for X={X}, lowerBound={lowerBound}, upperBound={upperBound}, yl={yl}, yu={yu}, r={r}");
+            return logPhiR - logZ;
         }
 
         private static bool AdjustXPrecision(Bernoulli isBetween, ref Gaussian X, Gaussian lowerBound, Gaussian upperBound, ref double logZ, double precisionScaling = 1)
@@ -1237,8 +1254,12 @@ namespace Microsoft.ML.Probabilistic.Factors
             return precisionWasZero;
         }
 
-        private static void GetAlpha(Gaussian X, Gaussian lowerBound, Gaussian upperBound, double logZ, double d_p, double yl, double yu, double r, double invSqrtVxl, double invSqrtVxu, out double alphaL, out double alphaU)
+        private static void GetAlpha(Gaussian X, Gaussian lowerBound, Gaussian upperBound, double logZ, double logZRatio,
+            double d_p, double yl, double yu, double r, double invSqrtVxl, double invSqrtVxu,
+            bool getAlphaL, out double alphaL, bool getAlphaU, out double alphaU, out double ylInvSqrtVxlPlusAlphaX, out double yuInvSqrtVxuMinusAlphaX)
         {
+            double omr2 = (1 - r) * (1 + r); // more accurate than 1-r*r     
+            bool useLogZRatio = (r > smallR) && (logZ < smallLogZ);
             alphaL = 0.0;
             if (r == 0 && !Double.IsInfinity(yl))
             {
@@ -1247,13 +1268,15 @@ namespace Microsoft.ML.Probabilistic.Factors
             else if (!lowerBound.IsUniform() && !Double.IsInfinity(yl))
             {
                 // since X and lowerBound are not both uniform, invSqrtVxl > 0
-                double logPhiL = Gaussian.GetLogProb(yl, 0, 1);
+                double logPhiL = 0;
+                if (!useLogZRatio)
+                    logPhiL += Gaussian.GetLogProb(yl, 0, 1);
+                double yuryl = 0;
                 if (r > -1)
                 {
-                    double yuryl;
-                    if (r > -0.99)
+                    if (r > smallR)
                     {
-                        yuryl = (yu - r * yl) / Math.Sqrt(1 - r * r);
+                        yuryl = (yu - r * yl) / Math.Sqrt(omr2);
                     }
                     else
                     {
@@ -1267,9 +1290,17 @@ namespace Microsoft.ML.Probabilistic.Factors
                         upperBound.GetMeanAndVariance(out mu, out vu);
                         yuryl = (mx * vl / (vx + vl) + mu - ml * vx / (vx + vl)) / Math.Sqrt(vx * vl + vx * vu + vl * vu) / invSqrtVxl;
                     }
-                    logPhiL += MMath.NormalCdfLn(yuryl);
+                    if (useLogZRatio)
+                    {
+                        logPhiL = MMath.NormalCdfRatioLn(yuryl);
+                    }
+                    else
+                    {
+                        logPhiL += MMath.NormalCdfLn(yuryl);
+                    }
+                    if (logPhiL > double.MaxValue) throw new Exception();
                 }
-                alphaL = -d_p * invSqrtVxl * Math.Exp(logPhiL - logZ);
+                alphaL = -d_p * invSqrtVxl * Math.Exp(logPhiL - (useLogZRatio ? logZRatio : logZ));
             }
             alphaU = 0.0;
             if (r == 0 && !Double.IsInfinity(yu))
@@ -1279,13 +1310,15 @@ namespace Microsoft.ML.Probabilistic.Factors
             else if (!upperBound.IsUniform() && !Double.IsInfinity(yu))
             {
                 // since X and upperBound are not both uniform, invSqrtVxu > 0
-                double logPhiU = Gaussian.GetLogProb(yu, 0, 1);
+                double logPhiU = 0;
+                if (!useLogZRatio)
+                    logPhiU = Gaussian.GetLogProb(yu, 0, 1);
                 if (r > -1)
                 {
                     double ylryu;
-                    if (r > -0.99)
+                    if (r > smallR)
                     {
-                        ylryu = (yl - r * yu) / Math.Sqrt(1 - r * r);
+                        ylryu = (yl - r * yu) / Math.Sqrt(omr2);
                     }
                     else
                     {
@@ -1300,12 +1333,18 @@ namespace Microsoft.ML.Probabilistic.Factors
                         upperBound.GetMeanAndVariance(out mu, out vu);
                         ylryu = (mx * vu / (vx + vu) - ml + mu * vx / (vx + vu)) / Math.Sqrt(vx * vl + vx * vu + vl * vu) / invSqrtVxu;
                     }
-                    logPhiU += MMath.NormalCdfLn(ylryu);
+                    if (useLogZRatio)
+                        logPhiU += MMath.NormalCdfRatioLn(ylryu);
+                    else
+                        logPhiU += MMath.NormalCdfLn(ylryu);
                 }
-                alphaU = d_p * invSqrtVxu * Math.Exp(logPhiU - logZ);
+                alphaU = d_p * invSqrtVxu * Math.Exp(logPhiU - (useLogZRatio ? logZRatio : logZ));
             }
+            double alphaX = -alphaL - alphaU;
+            ylInvSqrtVxlPlusAlphaX = yl * invSqrtVxl + alphaX;
+            yuInvSqrtVxuMinusAlphaX = yu * invSqrtVxu - alphaX;
             // TODO: make this case smoothly blend into the X.IsPointMass case
-            if (r == -1 || logZ == MMath.NormalCdfLn(yl, yu, -1))
+            if (r == -1 || (!Double.IsInfinity(yl) && !Double.IsInfinity(yu) && logZ == MMath.NormalCdfLn(yl, yu, -1)))
             {
                 double mx, vx, ml, vl, mu, vu;
                 X.GetMeanAndVariance(out mx, out vx);
@@ -1321,6 +1360,7 @@ namespace Microsoft.ML.Probabilistic.Factors
                     // f(vl) - f(vu) =approx f(vu) + (vl-vu)*f'(vu)
                     invSqrtVxlMinusInvSqrtVxu = (vl - vu) * (-0.5) * (invSqrtVxu * invSqrtVxu * invSqrtVxu);
                 }
+                // This is more accurate than (yu+yl)
                 double yuPlusyl = mu * invSqrtVxu - ml * invSqrtVxl + mx * invSqrtVxlMinusInvSqrtVxu;
                 // double delta = Math.Exp(-0.5 * (yu * yu - yl * yl));
                 // This is more accurate than above.
@@ -1336,6 +1376,33 @@ namespace Microsoft.ML.Probabilistic.Factors
                     double ZoverPhiU = ncru - ncrl / delta;
                     alphaU = d_p * invSqrtVxu / ZoverPhiU;
                     //alphaU = d_p * invSqrtVxu * delta / ZoverPhiL;
+                    if (d_p == 1)
+                    {
+                        //   yl * invSqrtVxl + alphaX 
+                        // = yl * invSqrtVxl - alphaL - alphaU
+                        // = invSqrtVxl * (yl + 1/ZoverPhiL) - invSqrtVxu / ZoverPhiU
+                        // = invSqrtVxl * (yl + 1 / ZoverPhiL - 1 / ZoverPhiU) + (invSqrtVxl - invSqrtVxu) / ZoverPhiU
+                        // yl* ZoverPhiL*ZoverPhiU + ZoverPhiU - ZoverPhiL 
+                        // = yl * (ncrl - ncru * delta) * (ncrl / delta - ncru) - ncrl / delta + ncru + ncrl - ncru * delta
+                        // = yl * (ncrl * ncrl / delta - 2 * ncrl * ncru + ncru * ncru * delta) - ncrl / delta + ncru + ncrl - ncru * delta
+                        // = (yl * ncrl - 1) * ncrl / delta + (-yl * ncrl + 1) * ncru + (-yl * ncru + 1) * ncrl + (yl * ncru - 1) * ncru * delta
+                        // = (-yl * ncrl + 1) * (ncru - ncrl / delta) + (yl * ncru - 1) * (ncru * delta - ncrl)
+                        // = (-yl * ncrl + 1) * ZoverPhiU + (yl * ncru + 1) * ZoverPhiL
+                        // yl*ncru-1 = -yu*ncru-1 + (yl + yu) * ncru
+                        ylInvSqrtVxlPlusAlphaX = invSqrtVxl * (MMath.NormalCdfMomentRatio(1, -yl) / ZoverPhiL + (yuPlusyl * ncru - MMath.NormalCdfMomentRatio(1, yu)) / ZoverPhiU) + invSqrtVxlMinusInvSqrtVxu / ZoverPhiU;
+                        //   yu * invSqrtVxu - alphaX
+                        // = yu * invSqrtVxu + alphaL + alphaU
+                        // = invSqrtVxu * (yu + 1/ZoverPhiU) - invSqrtVxl / ZoverPhiL
+                        // = invSqrtVxu * (yu + 1/ZoverPhiU - 1/ZoverPhiL) - (invSqrtVxl - invSqrtVxu) / ZoverPhiL
+                        // yu*ZoverPhiL*ZoverPhiU + ZoverPhiL - ZoverPhiU
+                        // = yu * (ncrl - ncru * delta) * (ncrl / delta - ncru) + ncrl / delta - ncru - ncrl + ncru * delta
+                        // = yu * (ncrl * ncrl / delta - 2 * ncrl * ncru + ncru * ncru * delta) + ncrl / delta - ncru - ncrl + ncru * delta
+                        // = (yu * ncrl + 1) * ncrl / delta + (-yu * ncrl - 1) * ncru + (-yu * ncru - 1) * ncrl + (yu * ncru + 1) * ncru * delta
+                        // = (yu*ncrl + 1) * (ncrl/delta -ncru) + (yu*ncru+1)*(ncru*delta - ncrl)
+                        // = -(yu*ncrl + 1) * ZoverPhiU + (yu*ncru+1)*ZoverPhiL
+                        // yu*ncrl+1 = -yl*ncrl+1 +(yu+yl)*ncrl = MomentRatio(-yl) + (yu+yl)*ncrl
+                        yuInvSqrtVxuMinusAlphaX = invSqrtVxu * (MMath.NormalCdfMomentRatio(1, yu) / ZoverPhiU - (yuPlusyl * ncrl + MMath.NormalCdfMomentRatio(1, -yl)) / ZoverPhiL) - invSqrtVxlMinusInvSqrtVxu / ZoverPhiL;
+                    }
                 }
                 else if (yl < 0 && yu > 0)
                 {
@@ -1348,10 +1415,36 @@ namespace Microsoft.ML.Probabilistic.Factors
                     double ZoverPhiU = ncrl / delta - ncru;
                     alphaU = d_p * invSqrtVxu / ZoverPhiU;
                     //alphaU = d_p * invSqrtVxu * delta / ZoverPhiL;
-                    double q = yl * invSqrtVxl - alphaL - alphaU;
-                    double q2 = invSqrtVxl * (MMath.NormalCdfMomentRatio(1, yl) / ZoverPhiL - (yuPlusyl*ncru + MMath.NormalCdfMomentRatio(1, -yu)) / ZoverPhiU) + invSqrtVxlMinusInvSqrtVxu/ZoverPhiU;
-                    Trace.WriteLine($"q={q}, {q2}");
+                    if (d_p == 1)
+                    {
+                        //   yl * invSqrtVxl + alphaX 
+                        // = yl * invSqrtVxl - alphaL - alphaU
+                        // = invSqrtVxl * (yl + 1/ZoverPhiL) - invSqrtVxu / ZoverPhiU
+                        // = invSqrtVxl * (yl + 1 / ZoverPhiL - 1 / ZoverPhiU) + (invSqrtVxl - invSqrtVxu) / ZoverPhiU
+                        // yl* ZoverPhiL*ZoverPhiU + ZoverPhiU - ZoverPhiL 
+                        // = yl * (ncrl - ncru * delta) * (ncrl / delta - ncru) + ncrl / delta - ncru - ncrl + ncru * delta
+                        // = yl * (ncrl * ncrl / delta - 2 * ncrl * ncru + ncru * ncru * delta) + ncrl / delta - ncru - ncrl + ncru * delta
+                        // = (yl * ncrl + 1) * ncrl / delta - (yl * ncrl + 1) * ncru - (yl * ncru + 1) * ncrl + (yl * ncru + 1) * ncru * delta
+                        // = (yl * ncrl + 1) * (ncrl / delta - ncru) - (yl * ncru + 1) * (ncrl - ncru * delta)
+                        // yl* ncru+1 = (yl + yu) * ncru - yu * ncru + 1 = (yl + yu) * ncru + MomentRatio(-yu)
+                        ylInvSqrtVxlPlusAlphaX = invSqrtVxl * (MMath.NormalCdfMomentRatio(1, yl) / ZoverPhiL - (yuPlusyl * ncru + MMath.NormalCdfMomentRatio(1, -yu)) / ZoverPhiU) + invSqrtVxlMinusInvSqrtVxu / ZoverPhiU;
+                        //   yu * invSqrtVxu - alphaX
+                        // = yu * invSqrtVxu + alphaL + alphaU
+                        // = invSqrtVxu * (yu + 1/ZoverPhiU) - invSqrtVxl / ZoverPhiL
+                        // = invSqrtVxu * (yu + 1/ZoverPhiU - 1/ZoverPhiL) - (invSqrtVxl - invSqrtVxu) / ZoverPhiL
+                        // yu*ZoverPhiL*ZoverPhiU + ZoverPhiL - ZoverPhiU
+                        // = yu * (ncrl - ncru * delta) * (ncrl / delta - ncru) - ncrl / delta + ncru + ncrl - ncru * delta
+                        // = yu * (ncrl * ncrl / delta - 2 * ncrl * ncru + ncru * ncru * delta) - ncrl / delta + ncru + ncrl - ncru * delta
+                        // = (yu * ncrl - 1) * ncrl / delta + (-yu * ncrl + 1) * ncru + (-yu * ncru + 1) * ncrl + (yu * ncru - 1) * ncru * delta
+                        // = (yu*ncrl - 1) * (ncrl/delta -ncru) + (-yu*ncru+1)*(ncrl - ncru*delta)
+                        // = (yu*ncrl - 1) * ZoverPhiU + (-yu*ncru+1)*ZoverPhiL
+                        // -yu*ncrl+1 = yl*ncrl+1 -(yu+yl)*ncrl = MomentRatio(yl) - (yu+yl)*ncrl
+                        yuInvSqrtVxuMinusAlphaX = invSqrtVxu * (MMath.NormalCdfMomentRatio(1, -yu) / ZoverPhiU + (yuPlusyl * ncrl - MMath.NormalCdfMomentRatio(1, yl)) / ZoverPhiL) - invSqrtVxlMinusInvSqrtVxu / ZoverPhiL;
+                        if (double.IsNaN(ylInvSqrtVxlPlusAlphaX)) throw new Exception("ylInvSqrtVxlPlusAlphaX is NaN");
+                        if (double.IsNaN(yuInvSqrtVxuMinusAlphaX)) throw new Exception("yuInvSqrtVxuMinusAlphaX is NaN");
+                    }
                 }
+                if (double.IsNaN(alphaL)) throw new Exception("alphaL is NaN");
                 if (double.IsNaN(alphaU)) throw new Exception("alphaU is NaN");
             }
         }

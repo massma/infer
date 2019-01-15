@@ -1542,6 +1542,23 @@ f = 1/gamma(x+1)-1
         }
 
         /// <summary>
+        /// Computes <c>ln(NormalCdf(x)/N(x;0,1))</c> to high accuracy.
+        /// </summary>
+        /// <param name="x">Any real number.</param>
+        /// <returns></returns>
+        public static double NormalCdfRatioLn(double x)
+        {
+            if(x > 0)
+            {
+                return LogDifferenceOfExp(MMath.LnSqrt2PI + 0.5 * x * x, NormalCdfRatioLn(-x));
+            }
+            else
+            {
+                return Math.Log(NormalCdfRatio(x));
+            }
+        }
+
+        /// <summary>
         /// Computes <c>NormalCdf(x)/N(x;0,1)</c> to high accuracy.
         /// </summary>
         /// <param name="x">Any real number.</param>
@@ -2066,19 +2083,264 @@ f = 1/gamma(x+1)-1
                 y = -y;
                 r = -r;
             }
-            double omr2 = (1 - r) * (1 + r); // more accurate than 1-r*r            
-            double ymrx = (y - r * x) / Math.Sqrt(omr2);
             double exponent;
-            double result = NormalCdf_Helper(x, y, r, omr2, ymrx, out exponent);
+            double result = NormalCdf_Helper(x, y, r, out exponent);
             return offset + scale * result * Math.Exp(exponent);
         }
 
-        // factor out the dominant terms and then call confrac
-        private static double NormalCdf_Helper(double x, double y, double r, double omr2, double ymrx, out double exponent)
+        /// <summary>
+        /// Computes the natural logarithm of the cumulative bivariate normal distribution.
+        /// </summary>
+        /// <param name="x">First upper limit.</param>
+        /// <param name="y">Second upper limit.</param>
+        /// <param name="r">Correlation coefficient.</param>
+        /// <returns><c>ln(phi(x,y,r))</c></returns>
+        public static double NormalCdfLn(double x, double y, double r)
         {
-            exponent = Gaussian.GetLogProb(x, 0, 1);
+            if (Double.IsNegativeInfinity(x) || Double.IsNegativeInfinity(y))
+            {
+                return Double.NegativeInfinity;
+            }
+            else if (Double.IsPositiveInfinity(x))
+            {
+                return NormalCdfLn(y);
+            }
+            else if (Double.IsPositiveInfinity(y))
+            {
+                return NormalCdfLn(x);
+            }
+            else if (r == 0)
+            {
+                return NormalCdfLn(x) + NormalCdfLn(y);
+            }
+            else if (r == 1)
+            {
+                return NormalCdfLn(Math.Min(x, y));
+            }
+            else if (r == -1)
+            {
+                if (x > 0)
+                {
+                    if (y > 0)
+                    {
+                        // 1-NormalCdf(-x) + 1-NormalCdf(-y)-1 = 1 - NormalCdf(-x) - NormalCdf(-y)
+                        return Log1MinusExp(LogSumExp(NormalCdfLn(-x), NormalCdfLn(-y)));
+                    }
+                    else
+                    {
+                        // 1-NormalCdf(-x) + NormalCdf(y) - 1 = NormalCdf(y) - NormalCdf(-x)
+                        double nclx = NormalCdfLn(-x);
+                        double diff = NormalCdfLn(y) - nclx;
+                        if (diff < 0)
+                            return double.NegativeInfinity;
+                        return LogExpMinus1(diff) + nclx;
+                    }
+                }
+                else
+                {
+                    if (y > 0)
+                    {
+                        // NormalCdf(x) - NormalCdf(-y)
+                        if (x < -y)
+                            return double.NegativeInfinity;
+                        double ncly = NormalCdfLn(-y);
+                        double diff = NormalCdfLn(x) - ncly;
+                        if (diff < 0)
+                            return double.NegativeInfinity;
+                        return LogExpMinus1(diff) + ncly;
+                    }
+                    else
+                    {
+                        // x < 0 and y < 0
+                        return double.NegativeInfinity;
+                    }
+                }
+            }
+            // at this point, both x and y are finite.
+            // swap to ensure |x| > |y|
+            if (Math.Abs(y) > Math.Abs(x))
+            {
+                double t = x;
+                x = y;
+                y = t;
+            }
+            double logOffset = double.NegativeInfinity;
+            double scale = 1;
+            // ensure x <= 0
+            if (x > 0)
+            {
+                // phi(x,y,r) = phi(inf,y,r) - phi(-x,y,-r)
+                logOffset = MMath.NormalCdfLn(y);
+                scale = -1;
+                x = -x;
+                r = -r;
+            }
+            // ensure r <= 0
+            if (r > 0)
+            {
+                // phi(x,y,r) = phi(x,inf,r) - phi(x,-y,-r)
+                double logOffset2 = MMath.NormalCdfLn(x);
+                if (scale == 1)
+                    logOffset = logOffset2;
+                else
+                {
+                    // the difference here must always be positive since y > -x
+                    // offset -= offset2;
+                    // logOffset = log(exp(logOffset) - exp(logOffset2))
+                    logOffset = MMath.LogDifferenceOfExp(logOffset, logOffset2);
+                }
+                scale *= -1;
+                y = -y;
+                r = -r;
+            }
+            double exponent;
+            double result = NormalCdf_Helper(x, y, r, out exponent);
+            double logResult = exponent + Math.Log(result);
+            if (scale == -1)
+                return MMath.LogDifferenceOfExp(logOffset, logResult);
+            else
+                return MMath.LogSumExp(logOffset, logResult);
+        }
+
+        /// <summary>
+        /// Computes the natural logarithm of the cumulative bivariate normal distribution, 
+        /// minus the log-density of the bivariate normal distribution at x and y,
+        /// plus 0.5*log(1-r*r).
+        /// </summary>
+        /// <param name="x">First upper limit.</param>
+        /// <param name="y">Second upper limit.</param>
+        /// <param name="r">Correlation coefficient.</param>
+        /// <returns><c>ln(phi(x,y,r)/N([x;y],[0;0],[1 r; r 1])</c></returns>
+        public static double NormalCdfRatioLn(double x, double y, double r)
+        {
+            // The log-density of the bivariate normal distribution at x and y can be written in two equivalent ways:
+            // Gaussian.GetLogProb(x,0,1)+Gaussian.GetLogProb(y-r*x,0,1-r*r)
+            // Gaussian.GetLogProb(y,0,1)+Gaussian.GetLogProb(x-r*y,0,1-r*r)
+            if (Double.IsNegativeInfinity(x) || Double.IsNegativeInfinity(y))
+            {
+                throw new NotImplementedException();
+            }
+            else if (Double.IsPositiveInfinity(x))
+            {
+                return 0;
+            }
+            else if (Double.IsPositiveInfinity(y))
+            {
+                return 0;
+            }
+            else if (r == 0)
+            {
+                return NormalCdfRatioLn(x) + NormalCdfRatioLn(y);
+            }
+            else if (r == 1)
+            {
+                return NormalCdfRatioLn(Math.Min(x, y)) + MMath.LnSqrt2PI;
+            }
+            else if (r == -1)
+            {
+                if(string.Empty.Length==0)
+                    throw new NotImplementedException();
+                if (x > 0)
+                {
+                    if (y > 0)
+                    {
+                        // 1-NormalCdf(-x) + 1-NormalCdf(-y)-1 = 1 - NormalCdf(-x) - NormalCdf(-y)
+                        return Log1MinusExp(LogSumExp(NormalCdfLn(-x), NormalCdfLn(-y)));
+                    }
+                    else
+                    {
+                        // 1-NormalCdf(-x) + NormalCdf(y) - 1 = NormalCdf(y) - NormalCdf(-x)
+                        double nclx = NormalCdfLn(-x);
+                        double diff = NormalCdfLn(y) - nclx;
+                        if (diff < 0)
+                            return double.NegativeInfinity;
+                        return LogExpMinus1(diff) + nclx;
+                    }
+                }
+                else
+                {
+                    if (y > 0)
+                    {
+                        // NormalCdf(x) - NormalCdf(-y)
+                        if (x < -y)
+                            return double.NegativeInfinity;
+                        double ncly = NormalCdfLn(-y);
+                        double diff = NormalCdfLn(x) - ncly;
+                        if (diff < 0)
+                            return double.NegativeInfinity;
+                        return LogExpMinus1(diff) + ncly;
+                    }
+                    else
+                    {
+                        // x < 0 and y < 0
+                        return double.NegativeInfinity;
+                    }
+                }
+            }
+            // at this point, both x and y are finite.
+            // swap to ensure |x| > |y|
+            if (Math.Abs(y) > Math.Abs(x))
+            {
+                double t = x;
+                x = y;
+                y = t;
+            }
+            double logOffset = double.NegativeInfinity;
+            double scale = 1;
+            double omr2 = (1 - r) * (1 + r); // more accurate than 1-r*r            
+            // ensure x <= 0
+            if (x > 0)
+            {
+                // phi(x,y,r) = phi(inf,y,r) - phi(-x,y,-r)
+                double xmry = (x - r * y) / Math.Sqrt(omr2);
+                logOffset = MMath.NormalCdfRatioLn(y) - Gaussian.GetLogProb(xmry,0,1);
+                scale = -1;
+                x = -x;
+                r = -r;
+            }
+            // ensure r <= 0
+            if (r > 0)
+            {
+                // phi(x,y,r) = phi(x,inf,r) - phi(x,-y,-r)
+                double ymrx = (y - r * x) / Math.Sqrt(omr2);
+                double logOffset2 = MMath.NormalCdfRatioLn(x) - Gaussian.GetLogProb(ymrx,0,1);
+                if (scale == 1)
+                    logOffset = logOffset2;
+                else
+                {
+                    // the difference here must always be positive since y > -x
+                    // offset -= offset2;
+                    // logOffset = log(exp(logOffset) - exp(logOffset2))
+                    logOffset = MMath.LogDifferenceOfExp(logOffset, logOffset2);
+                }
+                scale *= -1;
+                y = -y;
+                r = -r;
+            }
+            double exponent;
+            double result = NormalCdf_Helper(x, y, r, out exponent, true);
+            double logResult = exponent + Math.Log(result);
+            if (scale == -1)
+                return MMath.LogDifferenceOfExp(logOffset, logResult);
+            else
+                return MMath.LogSumExp(logOffset, logResult);
+        }
+
+        // factor out the dominant terms and then call confrac
+        private static double NormalCdf_Helper(double x, double y, double r, out double exponent, bool ratio = false)
+        {
+            if (ratio)
+                exponent = 0;
+            else
+                exponent = Gaussian.GetLogProb(x, 0, 1);
+            double omr2 = (1 - r) * (1 + r); // more accurate than 1-r*r            
+            double ymrx = (y - r * x) / Math.Sqrt(omr2);
             double scale;
-            if (ymrx < 0)
+            if(ratio)
+            {
+                scale = 1;
+            }
+            else if (ymrx < 0)
             {
                 // since phi(ymrx) will be small, we factor N(ymrx;0,1) out of the confrac
                 exponent += Gaussian.GetLogProb(ymrx, 0, 1);
@@ -2448,122 +2710,6 @@ f = 1/gamma(x+1)-1
                     yield return rtable[tableStart - i];
                 }
             }
-        }
-
-        /// <summary>
-        /// Computes the natural logarithm of the cumulative bivariate normal distribution.
-        /// </summary>
-        /// <param name="x">First upper limit.</param>
-        /// <param name="y">Second upper limit.</param>
-        /// <param name="r">Correlation coefficient.</param>
-        /// <returns><c>ln(phi(x,y,r))</c></returns>
-        public static double NormalCdfLn(double x, double y, double r)
-        {
-            if (Double.IsNegativeInfinity(x) || Double.IsNegativeInfinity(y))
-            {
-                return Double.NegativeInfinity;
-            }
-            else if (Double.IsPositiveInfinity(x))
-            {
-                return NormalCdfLn(y);
-            }
-            else if (Double.IsPositiveInfinity(y))
-            {
-                return NormalCdfLn(x);
-            }
-            else if (r == 0)
-            {
-                return NormalCdfLn(x) + NormalCdfLn(y);
-            }
-            else if (r == 1)
-            {
-                return NormalCdfLn(Math.Min(x, y));
-            }
-            else if (r == -1)
-            {
-                if (x > 0)
-                {
-                    if (y > 0)
-                    {
-                        // 1-NormalCdf(-x) + 1-NormalCdf(-y)-1 = 1 - NormalCdf(-x) - NormalCdf(-y)
-                        return Log1MinusExp(LogSumExp(NormalCdfLn(-x), NormalCdfLn(-y)));
-                    }
-                    else
-                    {
-                        // 1-NormalCdf(-x) + NormalCdf(y) - 1 = NormalCdf(y) - NormalCdf(-x)
-                        double nclx = NormalCdfLn(-x);
-                        double diff = NormalCdfLn(y) - nclx;
-                        if (diff < 0)
-                            return double.NegativeInfinity;
-                        return LogExpMinus1(diff) + nclx;
-                    }
-                }
-                else
-                {
-                    if (y > 0)
-                    {
-                        // NormalCdf(x) - NormalCdf(-y)
-                        if (x < -y)
-                            return double.NegativeInfinity;
-                        double ncly = NormalCdfLn(-y);
-                        double diff = NormalCdfLn(x) - ncly;
-                        if (diff < 0)
-                            return double.NegativeInfinity;
-                        return LogExpMinus1(diff) + ncly;
-                    }
-                    else
-                    {
-                        // x < 0 and y < 0
-                        return double.NegativeInfinity;
-                    }
-                }
-            }
-            // at this point, both x and y are finite.
-            // swap to ensure |x| > |y|
-            if (Math.Abs(y) > Math.Abs(x))
-            {
-                double t = x;
-                x = y;
-                y = t;
-            }
-            double logOffset = double.NegativeInfinity;
-            double scale = 1;
-            // ensure x <= 0
-            if (x > 0)
-            {
-                // phi(x,y,r) = phi(inf,y,r) - phi(-x,y,-r)
-                logOffset = MMath.NormalCdfLn(y);
-                scale = -1;
-                x = -x;
-                r = -r;
-            }
-            // ensure r <= 0
-            if (r > 0)
-            {
-                // phi(x,y,r) = phi(x,inf,r) - phi(x,-y,-r)
-                double logOffset2 = MMath.NormalCdfLn(x);
-                if (scale == 1)
-                    logOffset = logOffset2;
-                else
-                {
-                    // the difference here must always be positive since y > -x
-                    // offset -= offset2;
-                    // logOffset = log(exp(logOffset) - exp(logOffset2))
-                    logOffset = MMath.LogDifferenceOfExp(logOffset, logOffset2);
-                }
-                scale *= -1;
-                y = -y;
-                r = -r;
-            }
-            double omr2 = (1 - r) * (1 + r); // more accurate than 1-r*r            
-            double ymrx = (y - r * x) / Math.Sqrt(omr2);
-            double exponent;
-            double result = NormalCdf_Helper(x, y, r, omr2, ymrx, out exponent);
-            double logResult = exponent + Math.Log(result);
-            if (scale == -1)
-                return MMath.LogDifferenceOfExp(logOffset, logResult);
-            else
-                return MMath.LogSumExp(logOffset, logResult);
         }
 
         #endregion
