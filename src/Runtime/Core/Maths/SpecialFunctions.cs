@@ -1679,7 +1679,7 @@ f = 1/gamma(x+1)-1
                 double deriv = iter.Current;
                 if (deriv == 0 || term == 0) return sum;
                 sum += deriv * term;
-                if (double.IsNaN(sum)) throw new Exception();
+                if (double.IsNaN(sum)) throw new Exception($"sum is NaN for x={x}, delta={delta}");
                 //Console.WriteLine("{0}: {1}", i, sum);
                 if (AreEqual(sum, sumOld)) return sum;
                 term *= delta;
