@@ -83,6 +83,7 @@ namespace TestApp
 
             //new GaussianOpTests().GaussianOpX();
             //new OperatorTests().GaussianIsBetweenTest2();
+            new OperatorTests().GaussianIsBetweenCRRR_LowerBoundTest();
             //new OperatorTests().GaussianIsBetweenCRRR_NegativeUpperBoundTest();
             //new OperatorTests().GaussianIsBetween_PointLowerBound();
             //new OperatorTests().GaussianIsBetween_PointUpperBound();

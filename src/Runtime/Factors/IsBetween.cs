@@ -1299,7 +1299,7 @@ namespace Microsoft.ML.Probabilistic.Factors
                         logPhiL += MMath.NormalCdfLn(yuryl);
                     }
                     if (logPhiL > double.MaxValue) throw new Exception();
-                    //Trace.WriteLine($"yuryl = {yuryl}, invSqrtVxl = {invSqrtVxl}");
+                    Trace.WriteLine($"yuryl = {yuryl}, invSqrtVxl = {invSqrtVxl}");
                 }
                 alphaL = -d_p * invSqrtVxl * Math.Exp(logPhiL - (useLogZRatio ? logZRatio : logZ));
             }
