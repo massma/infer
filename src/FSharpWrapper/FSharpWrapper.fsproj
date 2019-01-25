@@ -21,7 +21,7 @@
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="FSharpWrapper.fs" />
-    <Compile Include="$(SolutionDir)src\Shared\SharedAssemblyFileVersion.fs">
+    <Compile Include="..\Shared\SharedAssemblyFileVersion.fs">
       <Link>SharedAssemblyFileVersion.fs</Link>
     </Compile>
   </ItemGroup>
